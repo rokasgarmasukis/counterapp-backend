@@ -2,6 +2,9 @@ const User = require('../models/User');
 const Counter = require('../models/Counter');
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
+
+const USER_NOT_FOUND_MESSAGE = 'User not found';
 
 // @desc Get all users
 // @route GET /users
@@ -18,11 +21,16 @@ const getAllUsers = asyncHandler(async (req, res) => {
 // @route GET /users/:id
 // @access Private
 const getUser = asyncHandler(async (req, res) => {
-  const id = req.params.id;
-  const user = await User.findOne({ id }).select('-password').lean();
+  const userId = req.params.userId;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ messsage: 'invalid id' });
+  }
+
+  const user = await User.findById(userId).select('-password').lean().exec();
 
   if (!user) {
-    return res.status(400).json({ message: `No user with id ${id}` });
+    return res.status(404).json({ message: USER_NOT_FOUND_MESSAGE });
   }
 
   return res.json(user);
@@ -38,53 +46,85 @@ const createNewUser = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'All fields are required' });
   }
 
-  const duplicate = await User.findOne({username}).lean().exec()
+  const duplicate = await User.findOne({ username }).lean().exec();
 
   if (duplicate) {
-    return res.status(409).json({message: "Duplicate username"})
+    return res.status(409).json({ message: 'Duplicate username' });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10)
+  const hashedPassword = await bcrypt.hash(password, 10);
 
-  const userObject = {username, "password": hashedPassword, roles}
+  const userObject = { username, password: hashedPassword, roles };
 
-  const user = await User.create(userObject)
+  const user = await User.create(userObject);
 
   if (user) {
-    res.status(201).json({message: `New user ${username} created`})
+    res.status(201).json({ message: `New user ${username} created` });
   } else {
-    res.status(400).json({message: 'Invalid user data received'})
+    res.status(400).json({ message: 'Invalid user data received' });
   }
-
-
 });
 
 // @desc Update user
-// @route PATCH /users
+// @route PATCH /users/:userId
 // @access Private
 const updateUser = asyncHandler(async (req, res) => {
-    const {id, roles, password} = req.body
+  const userId = req.params.userId;
+  const { roles, password } = req.body;
 
-    if (!id || !username || !Array.isArray(roles) || !roles.length) {
-        return res.status(400).json({message: "All fields are required"})
-    }
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ messsage: 'invalid id' });
+  }
 
-    // no lean(), because method on it like save will be used 
-    const user = await User.findById(id).exec()
+  if (!Array.isArray(roles) || !roles.length) {
+    return res.status(400).json({ message: 'All fields are required' });
+  }
 
-    if(!user) {
-        return res.status(400).json({message: "User not found"})
-    }
+  // no lean(), because method on it like save will be used
+  const user = await User.findById(userId).exec();
 
-    user.roles = roles
+  if (!user) {
+    return res.status(404).json({ message: USER_NOT_FOUND_MESSAGE });
+  }
 
-    if (password) {
-        user.password = bcrypt.hash(password, 10)
-    }
+  user.roles = roles;
 
-    const updatedUser = await user.save()
+  if (password) {
+    user.password = await bcrypt.hash(password, 10);
+  }
 
-    res.json({message: `user ${user.username} updated`})
+  const updatedUser = await user.save();
+
+  res.json({ message: `user ${user.username} updated` });
 });
 
-module.exports = { getAllUsers, getUser, createNewUser, updateUser };
+// @desc Delete user
+// @route DELETE /users/:userId
+// @access Private
+const deleteUser = asyncHandler(async (req, res) => {
+  const userId = req.params.userId;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ messsage: 'invalid id' });
+  }
+
+  const user = await User.findById(userId).exec();
+
+  if (!user) {
+    return res.status(404).json({ message: USER_NOT_FOUND_MESSAGE });
+  }
+
+  const deletedUser = await user.deleteOne();
+
+  return res.json({
+    message: `User ${deletedUser.username} with ID ${deletedUser._id} deleted`,
+  });
+});
+
+module.exports = {
+  getAllUsers,
+  getUser,
+  createNewUser,
+  updateUser,
+  deleteUser,
+};
